@@ -22,10 +22,12 @@ def run_web():
 TELEGRAM_TOKEN = "8876813204:AAFPDXKUyMAtFITyHGuWKLHI6QA2Mx7sfcs"
 GEMINI_API_KEY = "AQ.Ab8RN6IXAvonufn_46REm088uYzw7SKxBBOlujMQXrHXWqUj4g"
 
+HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+
 def check_rugcheck(mint_address):
     try:
         url = f"https://api.rugcheck.xyz/v1/tokens/{mint_address}/report/summary"
-        res = requests.get(url, timeout=8)
+        res = requests.get(url, headers=HEADERS, timeout=8)
         if res.status_code == 200:
             data = res.json()
             score = data.get("score", 0)
@@ -101,11 +103,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         try:
             dex_url = f"https://api.dexscreener.com/latest/dex/tokens/{text}"
-            res = requests.get(dex_url, timeout=10).json()
-            pairs = res.get("pairs", [])
+            res = requests.get(dex_url, headers=HEADERS, timeout=10)
+            
+            if res.status_code != 200 or not res.text.strip():
+                await update.message.reply_text("❌ لم يتم استجابة المنصة بشكل صحيح، حاول مجدداً بعد قليل.")
+                return
+
+            res_json = res.json()
+            pairs = res_json.get("pairs", [])
 
             if not pairs:
-                await update.message.reply_text("❌ لم يتم العثور على بيانات لهذا العقد.")
+                await update.message.reply_text("❌ لم يتم العثور على بيانات لهذا العقد على DexScreener.")
                 return
 
             pair = pairs[0]
@@ -139,16 +147,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(report, disable_web_page_preview=True)
 
         except Exception as e:
-            await update.message.reply_text(f"⚠️ حدث خطأ: {str(e)}")
+            await update.message.reply_text(f"⚠️ حدث خطأ تقني: {str(e)}")
     else:
         await update.message.reply_text("أهلاً بك! أرسل لي عقد عملة سولانا للفحص.")
 
 if __name__ == '__main__':
-    # تشغيل السيرفر في Thread منفصل
     t = threading.Thread(target=run_web)
     t.start()
     
-    # تشغيل بوت التليجرام
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
