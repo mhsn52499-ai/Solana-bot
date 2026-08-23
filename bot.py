@@ -18,13 +18,14 @@ def run_web():
     port = int(os.environ.get("PORT", 8080))
     app_web.run(host='0.0.0.0', port=port)
 
-# --- بيانات وتكاوين البوت ---
+# --- بيانات البوت والمفاتيح ---
 TELEGRAM_TOKEN = "8876813204:AAFPDXKUyMAtFITyHGuWKLHI6QA2Mx7sfcs"
 GEMINI_API_KEY = "AQ.Ab8RN6IXAvonufn_46REm088uYzw7SKxBBOlujMQXrHXWqUj4g"
 
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
 
 def check_rugcheck(mint_address):
+    """فحص أمان العقد عبر RugCheck"""
     try:
         url = f"https://api.rugcheck.xyz/v1/tokens/{mint_address}/report/summary"
         res = requests.get(url, headers=HEADERS, timeout=8)
@@ -38,7 +39,8 @@ def check_rugcheck(mint_address):
     return "غير معروف", 9999
 
 def analyze_with_gemini(coin_data):
-    url = "https://generativelanguage.googleapis.com/v1beta/interactions"
+    """التحليل المفصل المباشر عبر Gemini API مع دعم كامل لمفاتيح AQ"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={GEMINI_API_KEY}"
 
     prompt = f"""
     أنت خبير ومحلل محترف لعملات الميم على شبكة سولانا.
@@ -51,19 +53,23 @@ def analyze_with_gemini(coin_data):
     - حجم التداول (24h): ${coin_data['volume']:,.2f}
     - سكور الأمان: {coin_data['score']} ({coin_data['safety']})
 
-    المطلوب:
+    المطلوب بالتحديد:
     1. تقييم حجم التداول، السيولة، والماركت كاب (نسبة السيولة للماركت كاب وتأثيرها على الانزلاق السعري).
     2. نصيحة صريحة ومفصلة للمتداول (فرص الدخول المضاربي، مستويات الخطورة، وإدارة رأس المال).
     """
 
     headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY
+        "Content-Type": "application/json"
     }
 
     payload = {
-        "model": "gemini-3.6-flash",
-        "input": prompt
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
     }
 
     last_error = ""
@@ -72,19 +78,15 @@ def analyze_with_gemini(coin_data):
             res = requests.post(url, json=payload, headers=headers, timeout=60)
             if res.status_code == 200:
                 result = res.json()
-                text_response = ""
-                for step in result.get("steps", []):
-                    if step.get("type") == "model_output":
-                        for block in step.get("content", []):
-                            if block.get("type") == "text":
-                                text_response += block.get("text", "")
-                if text_response:
-                    clean_text = re.sub(r'[*_`#]', '', text_response)
-                    return clean_text
+                text_response = result['candidates'][0]['content']['parts'][0]['text']
+                clean_text = re.sub(r'[*_`#]', '', text_response)
+                return clean_text
             else:
                 last_error = f"HTTP {res.status_code}: {res.text[:300]}"
+                print(f"[Gemini Error] {last_error}")
         except Exception as e:
             last_error = str(e)
+            print(f"[Gemini Exception] {last_error}")
             time.sleep(1)
 
     return f"⚠️ تعذر جلب التحليل المفصل حالياً.\nتفاصيل تقنية: {last_error}"
@@ -152,9 +154,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("أهلاً بك! أرسل لي عقد عملة سولانا للفحص.")
 
 if __name__ == '__main__':
+    # تشغيل السيرفر الوهمي في Thread منفصل
     t = threading.Thread(target=run_web)
     t.start()
     
+    # تشغيل البوت
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
